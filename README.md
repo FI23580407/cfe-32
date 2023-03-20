@@ -2,9 +2,9 @@
 
 Container image that uses rsyslog to send kubernetes logs using RELP.
 
-## Example demo preparation
+## Example configuration
 
-Example kubernetes files are in are in `example/`
+Example kubernetes files are in `example/`
 
 ### Create configMap
 
