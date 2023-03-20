@@ -1,0 +1,44 @@
+{
+  "dirs": {
+    "etc": "/opt/Fail-Safe/kubernetes-forwarder/etc",
+    "var": "/opt/Fail-Safe/kubernetes-forwarder/var"
+  },
+  "kubernetes": {
+    "logdir": "/var/log/containers",
+    "url": "https://127.0.0.1:443",
+    "tokenfile": "/var/run/secrets/kubernetes.io/serviceaccount/token",
+    "cacert": "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+    "skipverifyhost": "off",
+    "cacheexpireinterval": "0",
+    "cacheentryttl": "5",
+    "labels": {
+      "hostname": {
+        "prefix": "kubernetes-",
+        "label": "host",
+        "fallback": "fallback-hostname"
+      },
+      "appname": {
+        "prefix": "kubernetes-",
+        "label": "app",
+        "fallback": "fallback-appname"
+      }
+    },
+    "logfiles": [
+      "*_default_*"
+    ]
+  },
+  "omrelp": {
+    "target": "127.0.0.1",
+    "name": "cfe-10",
+    "port": "601",
+    "rebindinterval": "10000000",
+    "resumeinterval": "10",
+    "resumeintervalmax": "60"
+  },
+  "metrics": {
+    "send": {
+      "port": "9514",
+      "target": "127.0.0.1"
+    }
+  }
+}
