@@ -1,0 +1,175 @@
+#
+# Fail-Safe Kubernetes log forwarder
+# Copyright (C) 2023 Fail-Safe IT Solutions Oy
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://github.com/FI23580407/FI23580407/blob/main/LICENSE>.
+#
+#
+# Additional permission under GNU Affero General Public License version 3
+# section 7
+#
+# If you modify this Program, or any covered work, by linking or combining it with
+# other code, such other code is not for that reason alone subject to any of the
+# requirements of the GNU Affero GPL version 3 as long as this Program is the same
+# Program as licensed from Fail-Safe IT Solutions Oy without any additional
+# modifications.
+#
+# Supplemented terms under GNU Affero General Public License version 3
+# section 7
+#
+# Origin of the software must be attributed to Fail-Safe IT Solutions Oy.
+# Any modified versions must be marked as "Modified version of" The Program.
+#
+# Names of the licensors and authors may not be used for publicity purposes.
+#
+# No rights are granted for use of trade names, trademarks, or service marks
+# which are in The Program if any.
+#
+# Licensee must indemnify licensors and authors for any liability that these
+# contractual assumptions impose on licensors and authors.
+
+module(load="impstats" interval="300" resetCounters="on" format="cee" ruleset="metrics-impstats" log.syslog="on")
+$LocalHostName {{{hostname}}}
+$AbortOnUncleanConfig on
+$PreserveFQDN on
+$FileCreateMode 0644
+global(
+    workDirectory="{{{dirs.var}}}"
+    maxMessageSize="256k"
+    shutdown.enable.ctlc="on"
+)
+main_queue(queue.type="Direct")
+
+module(
+    load="mmkubernetes"
+    filenamerulebase="{{{dirs.etc}}}/rsyslog.d/kubernetes.rulebase"
+    KubernetesURL="{{{kubernetes.url}}}"
+    tls.cacert="{{{kubernetes.cacert}}}"
+    tokenfile="{{{kubernetes.tokenfile}}}"
+    busyretryinterval="0"
+    skipverifyhost="{{{kubernetes.skipverifyhost}}}"
+    cacheexpireinterval="{{{kubernetes.cacheexpireinterval}}}"
+    cacheentryttl="{{{kubernetes.cacheentryttl}}}"
+)
+module(load="mmjsonparse")
+module(load="imfile")
+module(load="omrelp")
+{{#kubernetes.logfiles}}
+input(
+    type="imfile"
+    file="{{{kubernetes.logdir}}}/{{{.}}}"
+    tag="kubernetes"
+    Severity="info"
+    Facility="local0"
+    PersistStateInterval="1"
+    addmetadata="on"
+    ruleset="forward"
+)
+{{/kubernetes.logfiles}}
+# Stats buckets
+dyn_stats(name="tags-in" resettable="on" maxCardinality="30000" unusedMetricLife="300")
+dyn_stats(name="tags-out" resettable="on" maxCardinality="30000" unusedMetricLife="300")
+
+# Metrics
+template(name="metrics-impstats" type="list" ) {
+    constant(value="<")
+    property(name="pri")
+    constant(value=">")
+    constant(value="1 ")
+    property(name="timestamp" dateFormat="rfc3339")
+    constant(value=" ")
+    property(name="hostname")
+    constant(value=" ")
+    property(name="app-name")
+    constant(value=" ")
+    property(name="procid")
+    constant(value=" ")
+    property(name="msgid")
+    constant(value=" ")
+    property(name="$!our_sd")
+    constant(value=" ")
+    constant(value="{")
+    property(name="timereported" dateFormat="rfc3339" format="jsonf" outname="@timestamp")
+    constant(value=",")
+    property(name="hostname" format="jsonf" outname="host")
+    constant(value=",\"source-module\":\"impstats\",")
+    property(name="$!metrics" position.from="2")
+    constant(value="\n")
+}
+
+ruleset(name="metrics-impstats" queue.type="Direct") {
+    action(name="metrics-impstats-mmjsonparse" type="mmjsonparse" container="!metrics" queue.type="Direct")
+    set $!parsed_time = parse_time($timegenerated);
+    set $!our_sd = "[event_id@48577 hostname=\"" & $$myhostname & "\" uuid=\"" & $uuid & "\" unixtime=\"" & $!parsed_time & "\" id_source=\"source\"]";
+    action(type="omfwd" name="metrics" target="{{{metrics.send.target}}}" port="{{{metrics.send.port}}}" template="metrics-impstats" queue.type="Direct")
+}
+
+# Forwarding
+template(name="forwarder_template" type="list"){
+    constant(value="<")
+    property(name="pri")
+    constant(value=">")
+    constant(value="1 ")
+    property(name="timestamp" dateFormat="rfc3339")
+    constant(value=" ")
+    constant(value="{{{kubernetes.labels.hostname.prefix}}}") property(name="$!hostname")
+    constant(value=" ")
+    constant(value="{{{kubernetes.labels.appname.prefix}}}") property(name="$!appname")
+    constant(value=" ")
+    property(name="procid")
+    constant(value=" ")
+    property(name="msgid")
+    constant(value=" ")
+    constant(value="[kubernetesmeta@48577 kubernetes=\"") property(name="$!kubernetes" format="json") constant(value="\" docker=\"") property(name="$!docker" format="json") constant(value="\"]")
+    constant(value=" ")
+    property(name="msg")
+    constant(value="\n")
+}
+
+ruleset(name="forward" queue.type="Direct") {
+    set $.inc = dyn_inc("tags-in", $hostname & "@" & $app-name);
+    action
+    (
+        type="mmkubernetes"
+        action.resumeRetryCount="-1"
+        action.resumeInterval="30"
+        action.resumeIntervalMax="300"
+        action.reportSuspension="on"
+        queue.type="Direct"
+    )
+    # Set hostname and replace if not exist
+    set $!hostname = $!kubernetes!labels!{{{kubernetes.labels.hostname.label}}};
+    if ( $!hostname == "") then {
+        reset $!hostname = "{{{kubernetes.labels.hostname.fallback}}}";
+    }
+    # Set appname and replace if not exist
+    set $!appname = $!kubernetes!labels!{{{kubernetes.labels.appname.label}}};
+    if ( $!appname == "") then {
+        reset $!appname = "{{{kubernetes.labels.appname.fallback}}}";
+    }
+    set $.inc = dyn_inc("tags-out", "{{{kubernetes.labels.hostname.prefix}}}" & $!hostname & "@{{{kubernetes.labels.appname.prefix}}}" & $!appname);
+    action
+    (
+        type="omrelp"
+        name="{{{omrelp.name}}}"
+        target="{{{omrelp.target}}}"
+        port="{{{omrelp.port}}}"
+        action.ResumeInterval="{{{omrelp.resumeinterval}}}"
+        action.ResumeRetryCount="-1"
+        template="forwarder_template"
+        RebindInterval="{{{omrelp.rebindinterval}}}"
+        action.resumeIntervalMax="{{{omrelp.resumeintervalmax}}}"
+        queue.type="Direct"
+    )
+}
