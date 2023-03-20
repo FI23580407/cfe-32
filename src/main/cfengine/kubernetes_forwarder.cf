@@ -1,0 +1,105 @@
+#
+# Fail-Safe Kubernetes log forwarder
+# Copyright (C) 2023 Fail-Safe IT Solutions Oy
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://github.com/FI23580407/FI23580407/blob/main/LICENSE>.
+#
+#
+# Additional permission under GNU Affero General Public License version 3
+# section 7
+#
+# If you modify this Program, or any covered work, by linking or combining it with
+# other code, such other code is not for that reason alone subject to any of the
+# requirements of the GNU Affero GPL version 3 as long as this Program is the same
+# Program as licensed from Fail-Safe IT Solutions Oy without any additional
+# modifications.
+#
+# Supplemented terms under GNU Affero General Public License version 3
+# section 7
+#
+# Origin of the software must be attributed to Fail-Safe IT Solutions Oy.
+# Any modified versions must be marked as "Modified version of" The Program.
+#
+# Names of the licensors and authors may not be used for publicity purposes.
+#
+# No rights are granted for use of trade names, trademarks, or service marks
+# which are in The Program if any.
+#
+# Licensee must indemnify licensors and authors for any liability that these
+# contractual assumptions impose on licensors and authors.
+
+body file control
+{
+        namespace => "kubernetes_forwarder";
+}
+
+bundle agent kubernetes_forwarder {
+  vars:
+      "config" data => readdata("$(this.promise_dirname)/config/config.json", "JSON"),
+        if => fileexists("$(this.promise_dirname)/config/config.json");
+  files:
+      "$(config[dirs][var])/."
+        create => "true",
+        if => isvariable("config[dirs][var]"),
+        handle => "var_done";
+      "$(config[dirs][etc])/."
+        create => "true",
+        if => isvariable("config[dirs][etc]"),
+        handle => "etc_done";
+      "$(config[dirs][etc])/rsyslog.conf"
+        create => "true",
+        edit_template => "$(this.promise_dirname)/templates/rsyslog.conf.mustache",
+        template_method => "mustache",
+        template_data => mergedata(@(config), '{"hostname": "$(sys.fqhost)"}'),
+        if => and(
+                   isvariable("config[dirs][etc]"),
+                   isdir("$(config[dirs][etc])")
+        ),
+        classes => if_repaired("rsyslog_config_repaired"),
+        depends_on => { "var_done", "etc_done" };
+      "$(config[dirs][etc])/rsyslog.d/."
+        create => "true",
+        if => isvariable("config[dirs][etc]"),
+        handle => "rsyslog_d_done";
+      "$(config[dirs][etc])/rsyslog.d/kubernetes.rulebase"
+        create => "true",
+        edit_template => "$(this.promise_dirname)/templates/rsyslog.d/kubernetes.rulebase.mustache",
+        template_method => "mustache",
+        template_data => @(config),
+        if => and(
+                   isvariable("config[dirs][etc]"),
+                   isdir("$(config[dirs][etc])/rsyslog.d")
+        ),
+        classes => if_repaired("kubernetes_config_repaired"),
+        depends_on => { "rsyslog_d_done" };
+  reports:
+      "[ERROR] Can't parse config.json"
+        if => not(isvariable("config"));
+      "[ERROR] Can't find config.json"
+        if => not(fileexists("$(this.promise_dirname)/config/config.json"));
+      "[INFO] Repaired rsyslog.conf"
+        if => "rsyslog_config_repaired";
+      "[INFO] Repaired kubernetes.rulebase"
+        if => "kubernetes_config_repaired";
+}
+
+body classes if_repaired(class) {
+        promise_repaired => { "$(class)" };
+}
+
+body perms set_perms(mode) {
+        mode => "$(mode)";
+        owners => { "root" };
+        groups => { "root" };
+}
