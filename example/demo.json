@@ -1,0 +1,155 @@
+{
+  "kind": "List",
+  "apiVersion": "v1",
+  "metadata": {},
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "mmkubernetes"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "metadata": {
+        "name": "mmkubernetes",
+        "annotations": {
+          "kubernetes.io/service-account.name": "mmkubernetes"
+        }
+      },
+      "type": "kubernetes.io/service-account-token"
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "Role",
+      "metadata": {
+        "namespace": "default",
+        "name": "mmkubernetes"
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods",
+            "namespaces"
+          ],
+          "verbs": [
+            "get",
+            "watch",
+            "list"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "RoleBinding",
+      "metadata": {
+        "name": "mmkubernetes",
+        "namespace": "default"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "mmkubernetes"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "mmkubernetes",
+        "apiGroup": "rbac.authorization.k8s.io"
+      }
+    },
+    {
+      "metadata": {
+        "name": "cfe-32",
+        "namespace": "default",
+        "labels": {
+          "env": "dev"
+        }
+      },
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "spec": {
+        "hostname": "cfe-32",
+        "serviceAccount": "mmkubernetes",
+        "serviceAccountName": "mmkubernetes",
+        "automountServiceAccountToken": true,
+        "dnsPolicy": "ClusterFirst",
+        "terminationGracePeriodSeconds": 0,
+        "volumes": [
+          {
+            "name": "cfe-32-configmap",
+            "configMap": {
+              "name": "cfe-32-configmap"
+            }
+          },
+          {
+            "name": "cfe-32-statefiles",
+            "persistentVolumeClaim": {
+              "claimName": "cfe-32-statefiles-claim"
+            }
+          },
+          {
+            "name": "cfe-32-var-log-containers",
+            "hostPath": {
+              "path": "/var/log/containers",
+              "type": "Directory"
+            }
+          },
+          {
+            "name": "cfe-32-var-log-pods",
+            "hostPath": {
+              "path": "/var/log/pods",
+              "type": "Directory"
+            }
+          },
+          {
+            "name": "cfe-32-var-lib-docker-containers",
+            "hostPath": {
+              "path": "/var/lib/docker/containers",
+              "type": "Directory"
+            }
+          }
+        ],
+        "containers": [
+          {
+            "image": "ghcr.io/fi23580407/cfe-32/app:1.0.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "cfe-32",
+            "volumeMounts": [
+              {
+                "mountPath": "/config/",
+                "name": "cfe-32-configmap"
+              },
+              {
+                "mountPath": "/opt/Fail-Safe/kubernetes-forwarder/var/",
+                "name": "cfe-32-statefiles"
+              },
+              {
+                "mountPath": "/var/log/containers",
+                "name": "cfe-32-var-log-containers",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/var/log/pods",
+                "name": "cfe-32-var-log-pods",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/var/lib/docker/containers",
+                "name": "cfe-32-var-lib-docker-containers",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "restartPolicy": "Always"
+      }
+    }
+  ]
+}

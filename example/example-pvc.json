@@ -1,0 +1,48 @@
+{
+  "kind": "List",
+  "apiVersion": "v1",
+  "metadata": {},
+  "items": [
+    {
+      "metadata": {
+        "name": "cfe-32-statefiles",
+        "labels": {
+          "type": "local"
+        }
+      },
+      "apiVersion": "v1",
+      "kind": "PersistentVolume",
+      "spec": {
+        "storageClassName": "standard",
+        "capacity": {
+          "storage": "10Gi"
+        },
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "hostPath": {
+          "path": "/mnt/cfe-32/statefiles"
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "cfe-32-statefiles-claim",
+        "namespace": "default"
+      },
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "spec": {
+        "volumeName": "cfe-32-statefiles",
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "1Gi"
+          }
+        }
+      }
+    }
+  ]
+}
